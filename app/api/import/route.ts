@@ -7,7 +7,7 @@ export async function POST(req: Request) {
   if (!text?.trim()) {
     return NextResponse.json({ error: "テキストが空です" }, { status: 400 });
   }
-  if (!checkAndCountUsage()) {
+  if (!(await checkAndCountUsage())) {
     return NextResponse.json(
       { error: `1日の解析上限(${DAILY_LIMIT}回)に達しました` },
       { status: 429 }
@@ -15,20 +15,20 @@ export async function POST(req: Request) {
   }
   try {
     const result = await analyzeConversation(text);
-    const insertMsg = db.prepare(
-      "INSERT INTO messages (speaker, original, translation) VALUES (?, ?, ?)"
+    await db.batch(
+      [
+        ...result.messages.map((m) => ({
+          sql: "INSERT INTO messages (speaker, original, translation) VALUES (?, ?, ?)",
+          args: [m.speaker, m.original, m.translation],
+        })),
+        ...result.words.map((w) => ({
+          sql: `INSERT INTO partner_words (word, meaning, note, example) VALUES (?, ?, ?, ?)
+                ON CONFLICT(word) DO UPDATE SET count = count + 1`,
+          args: [w.word, w.meaning, w.note, w.example],
+        })),
+      ],
+      "write"
     );
-    const upsertWord = db.prepare(
-      `INSERT INTO partner_words (word, meaning, note, example) VALUES (?, ?, ?, ?)
-       ON CONFLICT(word) DO UPDATE SET count = count + 1`
-    );
-    const tx = db.transaction(() => {
-      for (const m of result.messages)
-        insertMsg.run(m.speaker, m.original, m.translation);
-      for (const w of result.words)
-        upsertWord.run(w.word, w.meaning, w.note, w.example);
-    });
-    tx();
     return NextResponse.json(result);
   } catch (e) {
     console.error(e);

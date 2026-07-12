@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import db from "./db";
+import db, { ensureSchema } from "./db";
 
 const client = new Anthropic();
 
@@ -8,8 +8,10 @@ const client = new Anthropic();
 const CHEAP_MODEL = "claude-haiku-4-5";
 const SMART_MODEL = "claude-sonnet-5";
 
-export function getSettings() {
-  return db.prepare("SELECT * FROM settings WHERE id = 1").get() as {
+export async function getSettings() {
+  await ensureSchema();
+  const res = await db.execute("SELECT * FROM settings WHERE id = 1");
+  return res.rows[0] as unknown as {
     partner_name: string;
     partner_lang: string;
     my_lang: string;
@@ -38,7 +40,7 @@ export async function analyzeConversation(raw: string): Promise<{
   messages: AnalyzedMessage[];
   words: ExtractedWord[];
 }> {
-  const s = getSettings();
+  const s = await getSettings();
   const res = await client.messages.create({
     model: CHEAP_MODEL,
     max_tokens: 4096,
@@ -100,14 +102,11 @@ export type ReplySuggestion = {
 export async function suggestReplies(
   partnerMessage: string
 ): Promise<{ translation: string; suggestions: ReplySuggestion[] }> {
-  const s = getSettings();
-  const recentWords = (
-    db
-      .prepare("SELECT word FROM partner_words ORDER BY count DESC LIMIT 15")
-      .all() as { word: string }[]
-  )
-    .map((r) => r.word)
-    .join(", ");
+  const s = await getSettings();
+  const recentRes = await db.execute(
+    "SELECT word FROM partner_words ORDER BY count DESC LIMIT 15"
+  );
+  const recentWords = recentRes.rows.map((r) => r.word).join(", ");
   const res = await client.messages.create({
     model: SMART_MODEL,
     max_tokens: 4096,
@@ -157,18 +156,17 @@ export type QuizQuestion = {
 };
 
 export async function generateQuiz(): Promise<QuizQuestion[]> {
-  const s = getSettings();
+  const s = await getSettings();
   // 未出題・不正解が多い語を優先
-  const words = db
-    .prepare(
-      `SELECT w.id, w.word, w.meaning, w.note, w.example,
-              COALESCE(SUM(q.correct), 0) AS correct_count, COUNT(q.id) AS attempts
-       FROM partner_words w LEFT JOIN quiz_results q ON q.word_id = w.id
-       GROUP BY w.id
-       ORDER BY attempts ASC, (CAST(correct_count AS REAL) / MAX(attempts, 1)) ASC, w.count DESC
-       LIMIT 3`
-    )
-    .all() as {
+  const wordsRes = await db.execute(
+    `SELECT w.id, w.word, w.meaning, w.note, w.example,
+            COALESCE(SUM(q.correct), 0) AS correct_count, COUNT(q.id) AS attempts
+     FROM partner_words w LEFT JOIN quiz_results q ON q.word_id = w.id
+     GROUP BY w.id
+     ORDER BY attempts ASC, (CAST(correct_count AS REAL) / MAX(attempts, 1)) ASC, w.count DESC
+     LIMIT 3`
+  );
+  const words = wordsRes.rows as unknown as {
     id: number;
     word: string;
     meaning: string;
