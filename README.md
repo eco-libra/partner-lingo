@@ -1,36 +1,68 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 💞 Partner Lingo
 
-## Getting Started
+**国際遠距離カップル向けのAI言語学習アプリ** — 教科書ではなく「恋人が実際に使う言葉」から学ぶ。
 
-First, run the development server:
+パートナーとの会話ログを貼り付けると、AIが翻訳・スラング解説・頻出語の辞書化を行い、パーソナライズされたクイズを毎日出題します。既存の語学アプリ(Duolingo等)が汎用教材なのに対し、本アプリは「自分の恋人の言葉」だけを教材にする点が特徴です。
 
-```bash
+## 機能
+
+| 機能 | 説明 |
+|---|---|
+| 📥 会話取り込み | LINE/WhatsApp等の会話を貼り付け → 全文翻訳+学習価値のある単語・スラングを自動抽出(例: *no cap* = 「マジで」、AAVE由来の解説付き) |
+| 💬 AI返信提案 | 相手のメッセージに対し、翻訳+返事3案を提案(丁寧/カジュアル/甘めのトーン別、表現解説付き)。**あえてコピー不可**にし、自分の手で打つことで記憶に定着させるUX設計 |
+| 📖 相手辞書 | パートナーがよく使う言葉の頻度ランキング。会話を取り込むほど育つ |
+| ✏️ 今日の3問 | 辞書から4択クイズを自動生成。正誤履歴を記録し、未出題・不正解の語を優先出題(間隔反復の簡易版) |
+| ⚙️ 設定 | 言語ペアは自由(日本語×英語、日本語×スペイン語など)。プロンプトで動的に制御 |
+
+## 技術スタック
+
+- **フロント/バック**: Next.js 16 (App Router, Route Handlers) + TypeScript + Tailwind CSS
+- **DB**: SQLite (better-sqlite3) — MVP検証用。本番はSupabaseへ移行予定
+- **AI**: Anthropic Claude API
+  - 構造化出力(JSON Schema)で翻訳・単語抽出・クイズ生成の応答を型安全にパース
+  - コスト最適化: 裏方処理(抽出・作問)は軽量モデル(Haiku)、品質が重要な返信提案のみ上位モデル(Sonnet)を使い分け
+  - APIコスト保護: 1日あたりの呼び出し上限をDBで管理(429を返却)
+
+## 設計上の工夫
+
+- **「頼るため」ではなく「覚えるため」のAI**: 返信提案はコピーさせず解説を読ませて自分で打たせる。翻訳アプリとの決定的な差別化ポイント
+- **データが増えるほど賢くなるループ**: 取り込み → 辞書が育つ → クイズと返信提案が相手の口癖を反映 → もっと使う
+- **プライバシー前提の設計**: 会話データは自分の端末のローカルDBのみに保存(MVP段階)
+
+## セットアップ
+
+```sh
+git clone <this repo> && cd partner-lingo
+npm install
+
+cp .env.local.example .env.local
+# .env.local に ANTHROPIC_API_KEY を設定(https://console.anthropic.com)
+
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# → http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## スクリーンショット代わりの動作例
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+入力(会話ログ):
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+Alex: omg that movie was insane lol
+Alex: no cap it was the best one this year
+私: 本当に!また一緒に見たいな
+```
 
-## Learn More
+抽出結果(実際のAI出力):
 
-To learn more about Next.js, take a look at the following resources:
+> **insane** — すごい、ヤバい
+> 「狂っている」ではなく肯定的に「素晴らしい」の意。カジュアルな会話で若者がよく使う。
+>
+> **no cap** — 本当だ、マジで
+> AAVE由来のスラング。「cap」=嘘。信憑性を強調する表現。
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## ロードマップ
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [ ] Supabase移行(認証+マルチユーザー)+ Vercelデプロイ
+- [ ] 音声メッセージの文字起こし対応
+- [ ] 月次「ふりかえりレポート」(愛情表現の回数、新出単語数など)
+- [ ] カップル双方がインストールして相互同意の上で解析するペアリング機能
